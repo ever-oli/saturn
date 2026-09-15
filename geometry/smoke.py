@@ -14,6 +14,13 @@ from PIL import Image, ImageDraw
 
 from config import DEMO_DIR, PANEL_SIZE
 from geometry.faces import resolve_face_mode
+from geometry.multiview import (
+    VIEW_TO_FACE,
+    grid_to_cube_faces,
+    infer_cube_faces,
+    pipeline_loaded,
+    split_zero123_grid,
+)
 from geometry.net import FACE_CELLS, NET_COLS, NET_GAP, NET_ROWS
 from geometry.pipeline import generate
 from geometry.tees import ensure_example_band, ensure_example_starfield, ensure_tee_templates
@@ -72,6 +79,15 @@ def run_smoke(output_dir: Path | None = None) -> Path:
 
         _assert_faces_opaque_dark_or_lit(result.faces, name)
 
+    # Zero123++ disabled / no weights: generate must fall back to PIL.
+    mv_fallback = generate(
+        starfield, face_mode="auto", panel_size=_SMOKE_PANEL, enable_multiview=True
+    )
+    if mv_fallback.used_multiview:
+        raise AssertionError("enable_multiview=True without a loaded pipe should not claim Zero123++")
+    scores.append(f"mv_fallback: used_multiview={mv_fallback.used_multiview} face_mode={mv_fallback.face_mode}")
+    _assert_zero123_grid_mapping(dest)
+
     # Before/after for a transparent subject: old sticker-net vs new emblem net.
     _naive_sticker_net(cutout, _SMOKE_PANEL).save(dest / "cutout_before_net.png")
     generate(cutout, face_mode="emblem", panel_size=_SMOKE_PANEL).net.save(
@@ -99,6 +115,37 @@ def _assert_faces_opaque_dark_or_lit(faces: dict, label: str) -> None:
         score = checker_score(rgb)
         if score > _CHECKER_LIMIT:
             raise AssertionError(f"{label} face {name} checker score {score:.4f}")
+
+
+def _assert_zero123_grid_mapping(dest: Path) -> None:
+    """Colored 640×960 grid → six faces, no torch, no checker."""
+    colors = {
+        "front": (220, 40, 40),
+        "right": (40, 180, 80),
+        "top": (240, 220, 80),
+        "back": (50, 90, 210),
+        "left": (180, 70, 200),
+        "bottom": (40, 40, 40),
+    }
+    side = 320
+    grid = Image.new("RGB", (side * 2, side * 3), (127, 127, 127))
+    for i, name in enumerate(VIEW_TO_FACE):
+        r, c = divmod(i, 2)
+        tile = Image.new("RGB", (side, side), colors[name])
+        grid.paste(tile, (c * side, r * side))
+    grid.save(dest / "zero123_fake_grid.png")
+    tiles = split_zero123_grid(grid)
+    if len(tiles) != 6:
+        raise AssertionError(f"split_zero123_grid returned {len(tiles)} tiles")
+    faces = grid_to_cube_faces(tiles, panel_size=64)
+    for name, expected in colors.items():
+        got = tuple(int(x) for x in np.asarray(faces[name])[32, 32])
+        if got != expected:
+            raise AssertionError(f"Zero123++ mapping: {name} pixel {got} != {expected}")
+        if faces[name].mode != "RGB":
+            raise AssertionError(f"mapped {name} is {faces[name].mode}")
+    if infer_cube_faces(Image.new("RGB", (64, 64), (10, 10, 10)), 64) is not None and not pipeline_loaded():
+        raise AssertionError("infer_cube_faces must return None when the pipe is not loaded")
 
 
 def _naive_sticker_net(image: Image.Image, size: int) -> Image.Image:

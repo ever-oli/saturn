@@ -10,11 +10,11 @@ from PIL import Image
 from config import DEMO_DIR, ENABLE_MULTIVIEW, MOCKUP_BACKGROUND, PANEL_SIZE
 from geometry.cube import render_isometric_cube
 from geometry.faces import derive_faces
-from geometry.mockup import ShirtMockup, composite_shirts
-from geometry.multiview import infer_cube_faces
+from geometry.mockup import composite_shirts
+from geometry.multiview import infer_cube_faces, pipeline_loaded
 from geometry.net import build_latin_cross_net
-from geometry.tees import ensure_example_starfield, ensure_tee_templates
-from geometry.types import CubeFaces, checker_score, flatten_rgb
+from geometry.tees import ensure_tee_templates
+from geometry.types import CubeFaces, flatten_rgb
 
 
 @dataclass(frozen=True)
@@ -37,7 +37,7 @@ def generate(
     enable_multiview: bool | None = None,
     remove_bg: bool = False,
 ) -> SaturnResult:
-    """v1 generate(): PIL face mapping + geometry + shirt compositing."""
+    """PIL face mapping + optional Zero123++ faces, then cube/net/shirts."""
     ensure_tee_templates()
     size = panel_size or PANEL_SIZE
     used_mv = False
@@ -46,10 +46,12 @@ def generate(
     removed_bg = False
 
     want_mv = ENABLE_MULTIVIEW if enable_multiview is None else enable_multiview
-    if want_mv:
-        # Hook only — infer_cube_faces is a stub and returns None on CPU.
-        faces = infer_cube_faces(image, size)
-        used_mv = faces is not None
+    if want_mv and pipeline_loaded():
+        faces = infer_cube_faces(image, size, remove_bg=remove_bg)
+        if faces is not None:
+            used_mv = True
+            resolved_mode = "zero123++"
+            removed_bg = bool(remove_bg)
 
     if faces is None:
         faces, resolved_mode, removed_bg = derive_faces(

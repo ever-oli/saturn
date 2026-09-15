@@ -13,3 +13,4 @@ cutout_front: mode=RGB checker=0.0000 face_mode=emblem
 cutout_back: mode=RGB checker=0.0000 face_mode=emblem
 cutout_cube: mode=RGB checker=0.0000 face_mode=emblem
 cutout_net: mode=RGB checker=0.0000 face_mode=emblem
+mv_fallback: used_multiview=False face_mode=single
