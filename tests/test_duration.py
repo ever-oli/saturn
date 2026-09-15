@@ -12,15 +12,15 @@ from flux.prompts import LAYOUT_SEPARATE, LAYOUT_SIDE  # noqa: E402
 
 
 class DurationTests(unittest.TestCase):
-    def test_side_by_side_four_steps_is_official_window(self) -> None:
+    def test_side_by_side_four_steps_is_sixty(self) -> None:
         d = estimate_gpu_duration(None, "", LAYOUT_SIDE, False, 0, True, 4)
-        self.assertEqual(d, 85)
+        self.assertEqual(d, 60)
         self.assertGreaterEqual(d, 60)
         self.assertLessEqual(d, 90)
 
-    def test_separate_plus_print_caps_at_ninety(self) -> None:
+    def test_separate_plus_print_is_eighty_five(self) -> None:
         d = estimate_gpu_duration(object(), "notes", LAYOUT_SEPARATE, True, 0, True, 8)
-        self.assertEqual(d, 90)
+        self.assertEqual(d, 85)
 
 
 if __name__ == "__main__":

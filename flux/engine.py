@@ -1,10 +1,10 @@
-"""FLUX.2-klein-9B load + inference (ZeroGPU-friendly).
+"""FLUX.2-klein load + inference (ZeroGPU-friendly). Default checkpoint: ungated 4B.
 
 ``import spaces`` must happen in ``app.py`` *before* this module is imported so
 the CUDA monkey-patch is in place. Load at module scope with ``.to(device)``.
 Do not ``enable_model_cpu_offload`` (fights ZeroGPU packing).
 
-Official call (Hub model card + BFL Space): ``Flux2KleinPipeline``,
+Official call (Hub 4B model card): ``Flux2KleinPipeline``,
 ``guidance_scale=1.0``, ``num_inference_steps=4``, 1024². Uploads go in
 ``image=`` as a list of PIL images — reference conditioning, not img2img
 ``strength`` (that kwarg does not exist on this pipeline).
@@ -23,6 +23,7 @@ from config import (
     FLUX_GUIDANCE,
     FLUX_MODEL_ID,
     SKIP_MODEL_LOAD,
+    is_gated_klein_model,
 )
 
 _PIPE: Any = None
@@ -59,6 +60,20 @@ def _import_klein_pipeline():
     return Flux2KleinPipeline
 
 
+def _load_hint() -> str:
+    if is_gated_klein_model():
+        return (
+            f"{FLUX_MODEL_ID} is gated. Accept its license on the Hub and set "
+            "Space secret HF_TOKEN — or unset SATURN_FLUX_MODEL to use ungated "
+            "black-forest-labs/FLUX.2-klein-4B (Apache-2.0)."
+        )
+    return (
+        f"Default {FLUX_MODEL_ID} is ungated Apache-2.0 and should download "
+        "without a license click. If a Space variable still points at 9B, unset "
+        f"SATURN_FLUX_MODEL. If the class is missing: {_GIT_DIFFUSERS}."
+    )
+
+
 def load_flux_pipeline() -> bool:
     """Load Flux2KleinPipeline at module scope. Returns False on skip/failure."""
     global _PIPE, _LOAD_ERROR, _DEVICE
@@ -78,6 +93,7 @@ def load_flux_pipeline() -> bool:
         device = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.bfloat16 if device == "cuda" else torch.float32
         kwargs: dict[str, Any] = {"torch_dtype": dtype}
+        # Optional: a token does not hurt ungated 4B. It is not required to boot.
         token = hf_token()
         if token:
             kwargs["token"] = token
@@ -92,12 +108,7 @@ def load_flux_pipeline() -> bool:
         _PIPE = None
         _LOAD_ERROR = f"{type(exc).__name__}: {exc}"
         traceback.print_exc()
-        print(
-            "Saturn: FLUX.2-klein-9B load failed "
-            f"({_LOAD_ERROR}). Set Space secret HF_TOKEN and accept the "
-            f"FLUX Non-Commercial license at huggingface.co/{FLUX_MODEL_ID}. "
-            f"If the class is missing: {_GIT_DIFFUSERS}."
-        )
+        print(f"Saturn: Klein load failed ({_LOAD_ERROR}). {_load_hint()}")
         return False
 
 
@@ -144,9 +155,8 @@ def run_flux(
 ) -> Image.Image:
     if _PIPE is None:
         raise RuntimeError(
-            "FLUX.2-klein-9B is not loaded. Set Space secret HF_TOKEN, accept the "
-            f"FLUX Non-Commercial license ({FLUX_MODEL_ID}), and keep "
-            f"SATURN_ENABLE_FLUX=true. Last error: {_LOAD_ERROR or 'not attempted'}."
+            f"Klein is not loaded (`{FLUX_MODEL_ID}`). {_load_hint()} "
+            f"Last error: {_LOAD_ERROR or 'not attempted'}."
         )
     kwargs = build_call_kwargs(
         prompt,

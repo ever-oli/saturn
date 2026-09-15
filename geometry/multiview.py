@@ -1,6 +1,6 @@
 """Legacy Zero123++ multi-view backend (not loaded by the Gradio UI).
 
-The product path is FLUX.2-klein-9B in ``app.py``. This module remains for
+The product path is FLUX.2-klein-4B in ``app.py``. This module remains for
 geometry smoke tests and optional ``SATURN_ENABLE_MULTIVIEW`` callers. Weights
 are CC-BY-NC 4.0 — not for a commercial Printify pipeline.
 

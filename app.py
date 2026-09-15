@@ -1,9 +1,9 @@
 """Saturn — Black Cube of Saturn streetwear customizer.
 
-Primary path: FLUX.2-klein-9B product mockups on ZeroGPU (text-to-image and
-reference-conditioned design). Optional upload is passed as Klein ``image=``
-plus an optional BLIP caption — never stamped as six stickers. PIL geometry
-lives under Experimental. Printify is a stub. 9B is FLUX Non-Commercial.
+Primary path: FLUX.2-klein-4B product mockups on ZeroGPU (ungated Apache-2.0).
+Optional upload is passed as Klein ``image=`` plus an optional BLIP caption —
+never stamped as six stickers. PIL geometry lives under Experimental.
+Printify is a stub. 9B is optional via SATURN_FLUX_MODEL only.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from config import (  # noqa: E402
     FLUX_MODEL_ID,
     FLUX_STEPS,
     SKIP_MODEL_LOAD,
+    is_gated_klein_model,
 )
 from flux.caption import caption_image, caption_load_error, captioner_loaded, load_captioner  # noqa: E402
 from flux.compose import side_by_side  # noqa: E402
@@ -155,28 +156,36 @@ def estimate_gpu_duration(
     *args,
     **kwargs,
 ) -> int:
-    """60–90s. Official BFL Klein Space uses 85s for one distilled call."""
+    """60s for one 4B distilled call; 85s when extra mockup calls stack."""
     n = 2 if (layout or LAYOUT_SIDE) == LAYOUT_SEPARATE else 1
     if print_assets:
         n += 2
     if n <= 1:
-        return 85
-    return 90
+        return 60
+    return 85
 
 
 def _engine_banner() -> str:
     if flux_loaded():
-        flux = f"FLUX.2-klein-9B ready (`{FLUX_MODEL_ID}`)"
+        flux = f"FLUX.2-klein ready (`{FLUX_MODEL_ID}`)"
     elif SKIP_MODEL_LOAD:
         flux = "Flux skipped (`SATURN_SKIP_MODEL_LOAD`)"
     elif not ENABLE_FLUX:
         flux = "Flux disabled (`SATURN_ENABLE_FLUX=false`)"
     else:
         err = flux_load_error() or "not loaded"
-        flux = (
-            f"Flux not loaded ({err}). Set Space secret **HF_TOKEN** and accept the "
-            f"[model license](https://huggingface.co/{FLUX_MODEL_ID})."
-        )
+        if is_gated_klein_model():
+            flux = (
+                f"Flux not loaded ({err}). `{FLUX_MODEL_ID}` is gated — accept its "
+                "Hub license and set **HF_TOKEN**, or unset `SATURN_FLUX_MODEL` to "
+                "boot ungated **FLUX.2-klein-4B**."
+            )
+        else:
+            flux = (
+                f"Flux not loaded ({err}). Default 4B is ungated Apache-2.0 — no "
+                "license click. Unset Space variable `SATURN_FLUX_MODEL` if it still "
+                "points at gated 9B."
+            )
     cap = (
         "BLIP captioner ready"
         if captioner_loaded()
@@ -228,11 +237,16 @@ def generate_flux(
 ) -> tuple:
     """ZeroGPU handler: prompt (+ optional Klein ``image=`` ref) → mockup(s)."""
     if not flux_loaded():
+        if is_gated_klein_model():
+            raise gr.Error(
+                f"`{FLUX_MODEL_ID}` is gated and did not load. Accept its Hub license "
+                "and set HF_TOKEN, or unset SATURN_FLUX_MODEL to use ungated "
+                f"FLUX.2-klein-4B. Detail: {flux_load_error() or 'load was skipped'}."
+            )
         raise gr.Error(
-            "FLUX.2-klein-9B is not loaded. On the Space: Settings → Secrets → "
-            f"HF_TOKEN, and accept the FLUX Non-Commercial license at "
-            f"huggingface.co/{FLUX_MODEL_ID}. "
-            f"Detail: {flux_load_error() or 'load was skipped'}."
+            f"Klein is not loaded (`{FLUX_MODEL_ID}`). Default 4B is ungated — no "
+            "license click. If the Space still has SATURN_FLUX_MODEL=9B, delete that "
+            f"variable and restart. Detail: {flux_load_error() or 'load was skipped'}."
         )
 
     import random
@@ -290,11 +304,16 @@ def generate_flux(
     n_calls = 1 if job.layout == LAYOUT_SIDE else 2
     if print_assets:
         n_calls += 2
+    license_bit = (
+        "**License:** FLUX Non-Commercial (9B override)"
+        if is_gated_klein_model()
+        else "**License:** Apache-2.0 (4B) — Printify-friendly"
+    )
     status = (
-        f"**Engine:** FLUX.2-klein-9B (`{FLUX_MODEL_ID}`) · **steps:** {steps} · "
+        f"**Engine:** `{FLUX_MODEL_ID}` · **steps:** {steps} · "
         f"**guidance:** 1.0 · **seed:** `{seed}` · **calls:** {n_calls} · {ref_bit}\n\n"
         "Front: isometric cube chest graphic. Back: 6-panel Latin-cross cube net. "
-        "**License:** FLUX Non-Commercial — demo/research only, not paid merch."
+        f"{license_bit}."
     )
     prompt_md = format_job_markdown(job, print_assets=bool(print_assets))
     return combined, front_im, back_im, print_front, print_back, status, prompt_md
@@ -325,16 +344,15 @@ with gr.Blocks(title="Saturn", theme=THEME, css=CUSTOM_CSS, head=HEAD) as demo:
 # Saturn
 Black Cube of Saturn · *streetwear*
 
-Primary engine is **FLUX.2 [klein] 9B** — text-to-image and multi-reference
-editing in one model. Saturn writes a product prompt: isometric cube on the
+Primary engine is **FLUX.2 [klein] 4B** (Apache-2.0, **ungated**) — text-to-image
+and multi-reference editing. Saturn writes a product prompt: isometric cube on the
 **front**, Latin-cross cube net on the **back**, white oversized tee, catalog
 lighting. Optional upload is Klein **`image=`** reference conditioning (plus a
 short caption), never tiled as six stickers. Zero123++ is not a user-facing engine.
 
-**License: [FLUX Non-Commercial](https://huggingface.co/black-forest-labs/FLUX.2-klein-9B).**
-Demo and research on this Space are OK. **Do not use 9B outputs for paid Printify
-merch.** A later commercial swap is [FLUX.2-klein-4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B)
-(Apache-2.0) — not loaded here.
+**License: [Apache-2.0](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B).**
+Commercial / later Printify use is OK with 4B. Gated 9B is optional via
+`SATURN_FLUX_MODEL` only if you already have Hub access — not required to boot.
 
 {_engine_banner()}
             """
@@ -370,7 +388,7 @@ merch.** A later commercial swap is [FLUX.2-klein-4B](https://huggingface.co/bla
             generate_btn = gr.Button("Generate mockup", variant="primary")
             preview_btn = gr.Button("Preview prompt", variant="secondary")
             status = gr.Markdown(
-                "Optional upload + notes, then generate. Klein 9B is the primary action.",
+                "Optional upload + notes, then generate. Klein 4B is the primary action.",
                 elem_classes=["stub-note"],
             )
         with gr.Column(scale=6):
@@ -445,12 +463,8 @@ Use Klein generate for the streetwear product look.
 `printify/client.py` exposes `PrintifyClient.create_product` against
 `POST /v1/shops/{shop_id}/products.json`. It reads `PRINTIFY_API_TOKEN` and
 `PRINTIFY_SHOP_ID` and raises if they are missing. **Generate does not call
-Printify.**
-
-**Do not sell merch from this 9B Space.** FLUX.2-klein-9B is
-[FLUX Non-Commercial](https://huggingface.co/black-forest-labs/FLUX.2-klein-9B).
-For a later paid Printify path, swap the checkpoint to
-`black-forest-labs/FLUX.2-klein-4B` (Apache-2.0) — not implemented here.
+Printify.** Default **FLUX.2-klein-4B** is Apache-2.0, so a later paid Printify
+path is license-clean. Gated 9B is not the product checkpoint.
             """,
             elem_classes=["stub-note"],
         )

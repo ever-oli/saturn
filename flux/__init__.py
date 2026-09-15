@@ -1,4 +1,4 @@
-"""FLUX.2-klein-9B prompt builder, captioner, and generation helpers."""
+"""FLUX.2-klein prompt builder, captioner, and generation helpers."""
 
 from flux.prompts import PromptJob, build_job
 
