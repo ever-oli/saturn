@@ -9,9 +9,9 @@ python-dotenv==1.1.1
 # Experimental PIL path still uses rembg. Do not use rembg[gpu].
 rembg==2.0.57
 onnxruntime==1.19.2
-# FLUX.2-klein-9B needs Flux2KleinPipeline. Older PyPI (e.g. 0.36) only has
-# Flux2Pipeline — install diffusers from git until a release includes Klein.
-# Leave torch unpinned (ZeroGPU: 2.8.0 / 2.9.1 / 2.10.0 / 2.11.0).
+# FLUX.2-klein-4B (ungated Apache-2.0) needs Flux2KleinPipeline. Older PyPI
+# (e.g. 0.36) only has Flux2Pipeline — install diffusers from git until a
+# release includes Klein. Leave torch unpinned (ZeroGPU: 2.8.0 / 2.9.1 / 2.10.0 / 2.11.0).
 git+https://github.com/huggingface/diffusers.git
 accelerate
 transformers>=4.51.0

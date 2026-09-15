@@ -44,19 +44,24 @@ DEFAULT_FACE_MODE: str = os.getenv("SATURN_FACE_MODE", "auto").strip().lower()
 TEE_FRONT_PATH: Path = _path("SATURN_TEE_FRONT", ASSETS_DIR / "tee_front.png")
 TEE_BACK_PATH: Path = _path("SATURN_TEE_BACK", ASSETS_DIR / "tee_back.png")
 
-# Primary engine: FLUX.2-klein-9B (FLUX Non-Commercial). Default on.
-# Sibling FLUX.2-klein-4B is Apache-2.0 (commercial swap later; not loaded here).
-# If 9B OOMs on ZeroGPU large, set SATURN_FLUX_MODEL=black-forest-labs/FLUX.2-klein-9b-fp8
+# Primary engine: FLUX.2-klein-4B (Apache-2.0, ungated). Default on.
+# Optional: SATURN_FLUX_MODEL=black-forest-labs/FLUX.2-klein-9B if the Space
+# owner has accepted that gated Non-Commercial license. Do not set 9B as default.
 ENABLE_FLUX: bool = _bool("SATURN_ENABLE_FLUX", True)
 SKIP_MODEL_LOAD: bool = _bool("SATURN_SKIP_MODEL_LOAD", False)
-FLUX_MODEL_ID: str = os.getenv(
-    "SATURN_FLUX_MODEL", "black-forest-labs/FLUX.2-klein-9B"
-).strip()
+DEFAULT_FLUX_MODEL: str = "black-forest-labs/FLUX.2-klein-4B"
+FLUX_MODEL_ID: str = os.getenv("SATURN_FLUX_MODEL", DEFAULT_FLUX_MODEL).strip() or DEFAULT_FLUX_MODEL
 FLUX_STEPS: int = _int("SATURN_FLUX_STEPS", 4)
 FLUX_GUIDANCE: float = float(os.getenv("SATURN_FLUX_GUIDANCE", "1.0") or "1.0")
 FLUX_MAX_SEQ: int = _int("SATURN_FLUX_MAX_SEQ", 512)
-# Official BFL Space uses 85s; handler callable stays in 60–90s.
-FLUX_GPU_DURATION: int = _int("SATURN_FLUX_DURATION", 85)
+# 4B is ~13GB / 4-step; one call 60s, stacked calls up to 85s.
+FLUX_GPU_DURATION: int = _int("SATURN_FLUX_DURATION", 60)
+
+
+def is_gated_klein_model(model_id: str | None = None) -> bool:
+    """True for the gated 9B / 9b-fp8 family. 4B is ungated Apache-2.0."""
+    mid = (model_id if model_id is not None else FLUX_MODEL_ID).lower()
+    return "9b" in mid.replace("_", "-")
 
 CAPTION_MODEL_ID: str = os.getenv(
     "SATURN_CAPTION_MODEL", "Salesforce/blip-image-captioning-base"

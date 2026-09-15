@@ -1,4 +1,4 @@
-"""Black Cube of Saturn streetwear prompts for FLUX.2-klein-9B.
+"""Black Cube of Saturn streetwear prompts for FLUX.2-klein.
 
 Klein's Qwen3 encoder allows ``max_sequence_length=512``. Uploads are passed
 to the pipeline as ``image=`` reference conditioning; prompts tell the model

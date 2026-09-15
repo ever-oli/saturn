@@ -9,7 +9,7 @@ from pathlib import Path
 os.environ["SATURN_SKIP_MODEL_LOAD"] = "1"
 
 import app  # noqa: E402
-from config import ENABLE_FLUX, ENABLE_MULTIVIEW, SKIP_MODEL_LOAD  # noqa: E402
+from config import ENABLE_FLUX, ENABLE_MULTIVIEW, FLUX_MODEL_ID, SKIP_MODEL_LOAD  # noqa: E402
 from flux.engine import flux_loaded  # noqa: E402
 
 
@@ -19,6 +19,7 @@ class AppImportTests(unittest.TestCase):
         self.assertTrue(ENABLE_FLUX)
         self.assertFalse(ENABLE_MULTIVIEW)
         self.assertFalse(flux_loaded())
+        self.assertEqual(FLUX_MODEL_ID, "black-forest-labs/FLUX.2-klein-4B")
 
     def test_primary_api_is_flux_generate(self) -> None:
         self.assertTrue(callable(app.generate_flux))
@@ -26,8 +27,9 @@ class AppImportTests(unittest.TestCase):
         src = Path(app.__file__).read_text(encoding="utf-8")
         self.assertIn('api_name="generate"', src)
         self.assertIn("generate_flux", src)
-        self.assertIn("FLUX.2-klein-9B", src)
-        self.assertIn("FLUX Non-Commercial", src)
+        self.assertIn("FLUX.2-klein-4B", src)
+        self.assertIn("Apache-2.0", src)
+        self.assertNotIn("Primary engine is **FLUX.2 [klein] 9B**", src)
         self.assertNotIn("FLUX.1-schnell", src)
         self.assertNotIn("ENGINE_ZERO123", src)
         self.assertNotIn("Cube engine", src)
