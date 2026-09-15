@@ -54,7 +54,7 @@ def render_blank_tee(
 
     alpha = np.array(mask, dtype=np.uint8)
     rgba = np.dstack([rgb, alpha])
-    tee = Image.fromarray(rgba, "RGBA")
+    tee = Image.fromarray(rgba)
 
     overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
@@ -161,7 +161,7 @@ def ensure_example_starfield(path: Path | None = None, size: int = 768) -> Path:
         [img, img, np.clip(img.astype(np.int16) + 8, 0, 255).astype(np.uint8)],
         axis=-1,
     )
-    Image.fromarray(rgb, "RGB").save(out)
+    Image.fromarray(rgb).save(out)
     return out
 
 
@@ -181,7 +181,7 @@ def ensure_example_band(path: Path | None = None, size: int = 768) -> Path:
     gold[:, :, 1] = rng.integers(128, 168, (y1 - y0, size))
     gold[:, :, 2] = rng.integers(48, 78, (y1 - y0, size))
     cloth[y0:y1] = gold
-    Image.fromarray(cloth, "RGB").save(out)
+    Image.fromarray(cloth).save(out)
     return out
 
 

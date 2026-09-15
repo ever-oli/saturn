@@ -5,6 +5,9 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image
 
+from config import FACE_BACKGROUND
+from geometry.types import as_opaque_rgba
+
 
 def paste_parallelogram(
     canvas: Image.Image,
@@ -18,8 +21,12 @@ def paste_parallelogram(
 
     ``origin`` is the texture's (0, 0) corner. ``u_vec`` and ``v_vec`` run to
     the (1, 0) and (0, 1) corners. Inverse-affine sampled with bilinear filter.
+    The texture is flattened onto an opaque fill first so face interiors never
+    sample unresolved alpha (Gradio's checker).
     """
-    tex = np.asarray(texture.convert("RGBA"), dtype=np.float32)
+    opaque = as_opaque_rgba(texture, FACE_BACKGROUND)
+    tex = np.asarray(opaque, dtype=np.float32)
+    tex[:, :, 3] = 255.0
     th, tw = tex.shape[:2]
     if th < 2 or tw < 2:
         return
@@ -49,12 +56,13 @@ def paste_parallelogram(
     pts = np.stack((xs.ravel() + 0.5, ys.ravel() + 0.5), axis=1) - o
     uv = pts @ inverse.T
     uu, vv = uv[:, 0], uv[:, 1]
-    inside = (uu >= 0.0) & (uu <= 1.0) & (vv >= 0.0) & (vv <= 1.0)
+    # Slightly expand the hit test so adjacent faces share a pixel and hide cracks.
+    inside = (uu >= -0.003) & (uu <= 1.003) & (vv >= -0.003) & (vv <= 1.003)
     if not np.any(inside):
         return
 
-    uu = uu[inside]
-    vv = vv[inside]
+    uu = np.clip(uu[inside], 0.0, 1.0)
+    vv = np.clip(vv[inside], 0.0, 1.0)
     xs_i = xs.ravel()[inside]
     ys_i = ys.ravel()[inside]
 
@@ -82,6 +90,7 @@ def paste_parallelogram(
     if shade != 1.0:
         sample = sample.copy()
         sample[:, :3] = np.clip(sample[:, :3] * shade, 0, 255)
+    sample[:, 3] = 255.0
 
     dest = np.array(canvas, dtype=np.float32)
     dst_px = dest[ys_i, xs_i]

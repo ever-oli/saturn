@@ -1,7 +1,7 @@
 """Saturn — Black Cube of Saturn streetwear customizer.
 
-Hugging Face Spaces entrypoint. CPU Basic: PIL geometry only.
-Multi-view diffusion / SF3D and Printify live calls are stubbed.
+Hugging Face Spaces entrypoint. PIL geometry on CPU by default.
+Zero123++ runs on ZeroGPU when enabled; Printify is not called.
 """
 
 from __future__ import annotations
@@ -9,17 +9,30 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import spaces  # ZeroGPU requires ≥1 @spaces.GPU fn; PIL work stays outside it
+import spaces  # MUST be before torch / diffusers (ZeroGPU monkey-patch)
+
 import gradio as gr
 from PIL import Image
 
-from config import DEFAULT_FACE_MODE, ENABLE_MULTIVIEW, ENABLE_PRINTIFY
+from config import (
+    DEFAULT_FACE_MODE,
+    ENABLE_MULTIVIEW,
+    ENABLE_PRINTIFY,
+    ZERO123_GPU_DURATION,
+    ZERO123_MODEL,
+    ZERO123_STEPS,
+)
+from geometry.bg import rembg_available
+from geometry.multiview import load_error, load_pipeline, pipeline_loaded
 from geometry.pipeline import generate
 from geometry.tees import ensure_example_band, ensure_example_starfield, ensure_tee_templates
 
 ensure_tee_templates()
 EXAMPLE_STARFIELD = ensure_example_starfield()
 EXAMPLE_BAND = ensure_example_band()
+
+if ENABLE_MULTIVIEW:
+    load_pipeline()
 
 CUSTOM_CSS = """
 @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap");
@@ -114,27 +127,59 @@ THEME = gr.themes.Base(
 
 
 
-@spaces.GPU(duration=1)
-def _noop_zerogpu() -> None:
-    """ZeroGPU startup scan requires ≥1 decorated function; never called."""
-    return None
+ENGINE_PIL = "pil"
+ENGINE_ZERO123 = "zero123++"
 
 
-def _run(
-    image: Image.Image | None,
-    face_mode: str,
-) -> tuple[Image.Image | None, Image.Image | None, Image.Image | None, Image.Image | None, Image.Image | None, str]:
-    if image is None:
-        raise gr.Error("Upload an image — Saturn maps it onto a cube and unfolds the net.")
-
-    result = generate(image, face_mode=face_mode)
-    engine = "multi-view diffusion (stub hit — unexpected)" if result.used_multiview else "PIL geometry"
+def _pack(result) -> tuple:
+    engine = (
+        f"Zero123++ (`{ZERO123_MODEL}`, {ZERO123_STEPS} steps)"
+        if result.used_multiview
+        else "PIL geometry"
+    )
+    rembg_note = "on" if result.removed_bg else "off"
     status = (
-        f"**Path:** {engine} · **Face mode:** `{face_mode}`\n\n"
+        f"**Path:** {engine} · **Face mode:** `{result.face_mode}` · "
+        f"**rembg:** {rembg_note}\n\n"
         "Front is an isometric cube on the chest. Back is the 6-face Latin-cross net "
         "(column of 4; wings on the second square from the top)."
     )
     return result.combined, result.front, result.back, result.cube, result.net, status
+
+
+def generate_pil(
+    image: Image.Image | None,
+    face_mode: str,
+    remove_bg: bool,
+) -> tuple:
+    if image is None:
+        raise gr.Error("Upload an image — Saturn maps it onto a cube and unfolds the net.")
+    return _pack(generate(image, face_mode=face_mode, remove_bg=bool(remove_bg), enable_multiview=False))
+
+
+@spaces.GPU(duration=ZERO123_GPU_DURATION)
+def generate_multiview(
+    image: Image.Image | None,
+    face_mode: str,
+    remove_bg: bool,
+) -> tuple:
+    """ZeroGPU worker: Zero123++ faces, then CPU cube/net/tee. Falls back to PIL."""
+    if image is None:
+        raise gr.Error("Upload an image — Saturn maps it onto a cube and unfolds the net.")
+    return _pack(generate(image, face_mode=face_mode, remove_bg=bool(remove_bg), enable_multiview=True))
+
+
+def generate_auto(
+    image: Image.Image | None,
+    face_mode: str,
+    remove_bg: bool,
+    engine: str,
+) -> tuple:
+    """Gradio default `/generate`. PIL stays on the web process (no GPU quota)."""
+    key = (engine or ENGINE_PIL).strip().lower()
+    if key in {ENGINE_ZERO123, "zero123plus", "multiview"} and ENABLE_MULTIVIEW and pipeline_loaded():
+        return generate_multiview(image, face_mode, remove_bg)
+    return generate_pil(image, face_mode, remove_bg)
 
 
 with gr.Blocks(title="Saturn", theme=THEME, css=CUSTOM_CSS, head=HEAD) as demo:
@@ -144,8 +189,9 @@ with gr.Blocks(title="Saturn", theme=THEME, css=CUSTOM_CSS, head=HEAD) as demo:
 # Saturn
 Black Cube of Saturn · *streetwear customizer*
 
-Upload any image. v1 builds a chest cube and unfolds it into a Latin-cross net,
-then composites both onto blank oversized tees. v1 is PIL on ZeroGPU hosting (no GPU quota burned).
+Upload any image. Default path is **PIL geometry** (CPU, no GPU quota).
+Enable **Multi-view / Zero123++** on a ZeroGPU Space for six view-consistent
+faces. Faces are opaque materials or emblems (never unresolved alpha).
             """
         )
 
@@ -154,48 +200,102 @@ then composites both onto blank oversized tees. v1 is PIL on ZeroGPU hosting (no
             image_in = gr.Image(
                 label="Source texture",
                 type="pil",
-                image_mode="RGB",
+                image_mode="RGBA",
                 sources=["upload", "clipboard"],
                 height=360,
             )
+            _modes = ("auto", "single", "wrap", "emblem", "grid")
             face_mode = gr.Radio(
-                choices=["single", "wrap", "grid", "auto"],
-                value=DEFAULT_FACE_MODE if DEFAULT_FACE_MODE in {"single", "wrap", "grid", "auto"} else "single",
+                choices=[
+                    ("Auto", "auto"),
+                    ("Single material", "single"),
+                    ("Wrap band", "wrap"),
+                    ("Emblem on black", "emblem"),
+                    ("Grid 2×3", "grid"),
+                ],
+                value=DEFAULT_FACE_MODE if DEFAULT_FACE_MODE in _modes else "auto",
                 label="Face mapping",
-                info="single = one crop on all faces · wrap = horizontal band around the equator · grid = 2×3 crops",
+                info=(
+                    "auto = cutout→emblem, wide/gold band→wrap, else material · "
+                    "single = albedo + per-face light · wrap = kiswah/equator · "
+                    "emblem = subject on black · grid = 2×3 crops"
+                ),
+            )
+            _rembg = rembg_available()
+            _mv_ready = ENABLE_MULTIVIEW and pipeline_loaded()
+            _mv_info = (
+                f"Zero123++ ready (`{ZERO123_MODEL}`, {ZERO123_STEPS} steps, "
+                f"@{ZERO123_GPU_DURATION}s GPU). PIL stays default (no quota)."
+                if _mv_ready
+                else (
+                    f"Zero123++ load failed: `{load_error()}`. PIL fallback only."
+                    if ENABLE_MULTIVIEW and load_error()
+                    else "Set Space variable `SATURN_ENABLE_MULTIVIEW=true` (on by default under ZeroGPU) to load Zero123++."
+                )
+            )
+            engine = gr.Radio(
+                choices=[
+                    ("PIL geometry", ENGINE_PIL),
+                    ("Multi-view / Zero123++", ENGINE_ZERO123),
+                ],
+                value=ENGINE_PIL,
+                label="Cube engine",
+                info=_mv_info,
+                interactive=True,
+            )
+            remove_bg = gr.Checkbox(
+                label="Remove background (rembg)",
+                value=_rembg,
+                info=(
+                    "Cuts the subject out (u2netp, CPU) before emblem mapping or Zero123++. "
+                    "Textures in single/wrap skip rembg. Falls back to flatten if rembg is unavailable."
+                    if _rembg
+                    else "rembg is not installed — alpha is flattened onto #0a0a0a instead."
+                ),
+                interactive=_rembg,
             )
             generate_btn = gr.Button("Generate mockup", variant="primary")
             status = gr.Markdown("Upload a texture, then generate.", elem_classes=["stub-note"])
         with gr.Column(scale=6):
-            combined_out = gr.Image(label="Front + back mockup", type="pil", height=520)
+            combined_out = gr.Image(
+                label="Front + back mockup", type="pil", image_mode="RGB", height=520
+            )
 
     with gr.Row():
-        front_out = gr.Image(label="Front tee", type="pil")
-        back_out = gr.Image(label="Back tee", type="pil")
+        front_out = gr.Image(label="Front tee", type="pil", image_mode="RGB")
+        back_out = gr.Image(label="Back tee", type="pil", image_mode="RGB")
 
     with gr.Accordion("Geometry intermediates", open=False):
         with gr.Row():
-            cube_out = gr.Image(label="Isometric cube", type="pil")
-            net_out = gr.Image(label="Latin-cross net", type="pil")
+            cube_out = gr.Image(label="Isometric cube", type="pil", image_mode="RGB")
+            net_out = gr.Image(label="Latin-cross net", type="pil", image_mode="RGB")
 
-    with gr.Accordion("Multi-view diffusion (coming soon)", open=False):
+    with gr.Accordion("Multi-view / Zero123++", open=False):
         gr.Markdown(
-            """
-This is the plug-in point for **Zero123++ / SV3D / SF3D** so six cube faces stay
-view-consistent. v1 never loads those models — `geometry/multiview.py` returns
-`None` and the PIL path runs instead. Set `SATURN_ENABLE_MULTIVIEW=true` later
-when a GPU Space is attached; the flag is ignored until the stub is replaced.
+            f"""
+**Model:** `{ZERO123_MODEL}` via diffusers `Zero123PlusPipeline`
+(`custom_pipeline=sudo-ai/zero123plus-pipeline`).
+
+The pipeline emits a **640×960** image: **2 columns × 3 rows** of 320×320 tiles
+(row-major). v1.2 cameras and Saturn face slots:
+
+| Tile | Azimuth | Elevation | Face |
+| --- | --- | --- | --- |
+| 0 (r0c0) | 30° | +20° | FRONT |
+| 1 (r0c1) | 90° | −10° | RIGHT |
+| 2 (r1c0) | 150° | +20° | TOP |
+| 3 (r1c1) | 210° | −10° | BACK |
+| 4 (r2c0) | 270° | +20° | LEFT |
+| 5 (r2c1) | 330° | −10° | BOTTOM |
+
+TOP/BOTTOM are the leftover +20°/−10° views — Zero123++ does not output true
+orthographic +Z/−Z. Flag `SATURN_ENABLE_MULTIVIEW` is **{'on' if ENABLE_MULTIVIEW else 'off'}**;
+weights loaded: **{'yes' if pipeline_loaded() else 'no'}**.
+
+**License:** Zero123++ code is Apache 2.0; **weights are CC-BY-NC 4.0** (no
+commercial product pipeline). The Hub checkpoint is not gated. PIL geometry
+does not use this model.
             """,
-            elem_classes=["stub-note"],
-        )
-        gr.Dropdown(
-            choices=["PIL geometry (v1)", "Multi-view / SF3D (stub)"],
-            value="PIL geometry (v1)",
-            label="Cube engine",
-            interactive=False,
-        )
-        gr.Markdown(
-            f"Flag `SATURN_ENABLE_MULTIVIEW` is currently **{'on' if ENABLE_MULTIVIEW else 'off'}**.",
             elem_classes=["stub-note"],
         )
 
@@ -217,22 +317,34 @@ not call Printify.** Wire it here in v2 after print-area mapping exists.
 
     examples = []
     if Path(EXAMPLE_STARFIELD).exists():
-        examples.append([str(EXAMPLE_STARFIELD), "single"])
+        examples.append([str(EXAMPLE_STARFIELD), "auto", False, ENGINE_PIL])
     if Path(EXAMPLE_BAND).exists():
-        examples.append([str(EXAMPLE_BAND), "wrap"])
+        examples.append([str(EXAMPLE_BAND), "wrap", False, ENGINE_PIL])
     if examples:
         gr.Examples(
             examples=examples,
-            inputs=[image_in, face_mode],
+            inputs=[image_in, face_mode, remove_bg, engine],
             label="Example textures",
         )
 
+    _outputs = [combined_out, front_out, back_out, cube_out, net_out, status]
     generate_btn.click(
-        fn=_run,
-        inputs=[image_in, face_mode],
-        outputs=[combined_out, front_out, back_out, cube_out, net_out, status],
+        fn=generate_auto,
+        inputs=[image_in, face_mode, remove_bg, engine],
+        outputs=_outputs,
         api_name="generate",
     )
+    # Registered so ZeroGPU's startup scan sees a @spaces.GPU handler.
+    # Direct API: /generate_multiview. The visible button uses generate_auto,
+    # which calls this only when the engine is Zero123++ (PIL stays off-GPU).
+    with gr.Row(visible=False):
+        _mv_btn = gr.Button(visible=False)
+        _mv_btn.click(
+            fn=generate_multiview,
+            inputs=[image_in, face_mode, remove_bg],
+            outputs=_outputs,
+            api_name="generate_multiview",
+        )
 
 
 if __name__ == "__main__":
