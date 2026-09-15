@@ -44,11 +44,26 @@ DEFAULT_FACE_MODE: str = os.getenv("SATURN_FACE_MODE", "auto").strip().lower()
 TEE_FRONT_PATH: Path = _path("SATURN_TEE_FRONT", ASSETS_DIR / "tee_front.png")
 TEE_BACK_PATH: Path = _path("SATURN_TEE_BACK", ASSETS_DIR / "tee_back.png")
 
-# Default off on CPU. On a ZeroGPU Space, default on unless explicitly disabled.
-ENABLE_MULTIVIEW: bool = _bool(
-    "SATURN_ENABLE_MULTIVIEW",
-    default=_bool("SPACES_ZERO_GPU", False),
-)
+# Primary engine: FLUX.2-klein-9B (FLUX Non-Commercial). Default on.
+# Sibling FLUX.2-klein-4B is Apache-2.0 (commercial swap later; not loaded here).
+# If 9B OOMs on ZeroGPU large, set SATURN_FLUX_MODEL=black-forest-labs/FLUX.2-klein-9b-fp8
+ENABLE_FLUX: bool = _bool("SATURN_ENABLE_FLUX", True)
+SKIP_MODEL_LOAD: bool = _bool("SATURN_SKIP_MODEL_LOAD", False)
+FLUX_MODEL_ID: str = os.getenv(
+    "SATURN_FLUX_MODEL", "black-forest-labs/FLUX.2-klein-9B"
+).strip()
+FLUX_STEPS: int = _int("SATURN_FLUX_STEPS", 4)
+FLUX_GUIDANCE: float = float(os.getenv("SATURN_FLUX_GUIDANCE", "1.0") or "1.0")
+FLUX_MAX_SEQ: int = _int("SATURN_FLUX_MAX_SEQ", 512)
+# Official BFL Space uses 85s; handler callable stays in 60–90s.
+FLUX_GPU_DURATION: int = _int("SATURN_FLUX_DURATION", 85)
+
+CAPTION_MODEL_ID: str = os.getenv(
+    "SATURN_CAPTION_MODEL", "Salesforce/blip-image-captioning-base"
+).strip()
+
+# Legacy Zero123++ / PIL geometry. Off by default — not the product path.
+ENABLE_MULTIVIEW: bool = _bool("SATURN_ENABLE_MULTIVIEW", False)
 ENABLE_PRINTIFY: bool = _bool("SATURN_ENABLE_PRINTIFY", False)
 
 ZERO123_MODEL: str = os.getenv("SATURN_ZERO123_MODEL", "sudo-ai/zero123plus-v1.2").strip()
