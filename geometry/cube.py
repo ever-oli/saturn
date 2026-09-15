@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import math
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
-from config import CUBE_EDGE
+from config import CUBE_EDGE, FACE_BACKGROUND
 from geometry.raster import paste_parallelogram
-from geometry.types import CubeFaces
+from geometry.types import CubeFaces, as_opaque_rgba
 
 _SQRT3 = math.sqrt(3.0)
 
@@ -18,13 +18,13 @@ def render_isometric_cube(
     edge: int = 360,
     padding: int = 48,
 ) -> Image.Image:
-    """Draw a 30° isometric cube (top / front / right) onto a transparent canvas.
+    """Draw a 30° isometric cube (top / front / right) onto an RGBA canvas.
 
-    Geometry is approximate on purpose: v1 is PIL affine mapping, not a mesh
-    renderer. Multi-view diffusion / SF3D can replace this later.
+    Faces are flattened opaque before sampling so the Gradio checker cannot
+    punch through. Surrounding pixels stay transparent for tee compositing;
+    the pipeline flattens the display copy onto an opaque background.
     """
-    # Bounding box of the hexagon: width = edge * √3, height = 2 * edge
-    shadow_h = int(edge * 0.42)
+    shadow_h = int(edge * 0.48)
     width = int(edge * _SQRT3) + padding * 2
     height = 2 * edge + shadow_h + padding * 2
     canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
@@ -36,7 +36,6 @@ def render_isometric_cube(
         sy = ((x + y) * 0.5 - z) * edge
         return origin[0] + sx, origin[1] + sy
 
-    # Cube [0,1]^3. Camera sees TOP (z=1), FRONT (y=1), RIGHT (x=1).
     e = iso(0, 0, 1)
     f = iso(1, 0, 1)
     g = iso(1, 1, 1)
@@ -47,32 +46,29 @@ def render_isometric_cube(
 
     _draw_shadow(canvas, c, edge)
 
-    # TOP: origin E, +u → F, +v → H  (front of top image = H–G, matches net)
     paste_parallelogram(
         canvas,
-        faces["top"],
+        as_opaque_rgba(faces["top"], FACE_BACKGROUND),
         origin=e,
         u_vec=(f[0] - e[0], f[1] - e[1]),
         v_vec=(h[0] - e[0], h[1] - e[1]),
-        shade=1.12,
+        shade=1.10,
     )
-    # FRONT (visible left): origin H, +u → G, +v → D
     paste_parallelogram(
         canvas,
-        faces["front"],
+        as_opaque_rgba(faces["front"], FACE_BACKGROUND),
         origin=h,
         u_vec=(g[0] - h[0], g[1] - h[1]),
         v_vec=(d[0] - h[0], d[1] - h[1]),
-        shade=0.62,
+        shade=0.80,
     )
-    # RIGHT (visible right): origin G, +u → F, +v → C
     paste_parallelogram(
         canvas,
-        faces["right"],
+        as_opaque_rgba(faces["right"], FACE_BACKGROUND),
         origin=g,
         u_vec=(f[0] - g[0], f[1] - g[1]),
         v_vec=(c[0] - g[0], c[1] - g[1]),
-        shade=0.88,
+        shade=0.94,
     )
 
     _draw_wireframe(canvas, [e, f, b, c, d, h, g])
@@ -80,25 +76,24 @@ def render_isometric_cube(
 
 
 def _draw_shadow(canvas: Image.Image, front_bottom: tuple[float, float], edge: int) -> None:
-    """Concentric ellipse under the cube (Saturn-ring / mockup pedestal)."""
-    overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay)
-    cx, cy = front_bottom[0], front_bottom[1] + edge * 0.20
-    rx, ry = edge * 0.58, edge * 0.15
-    rings = 16
-    for i in range(rings, 0, -1):
-        t = i / rings
-        alpha = int(55 * t * t)
-        draw.ellipse(
-            (cx - rx * t, cy - ry * t, cx + rx * t, cy + ry * t),
-            outline=(0, 0, 0, max(alpha, 18)),
-            width=max(2, int(3 * t)),
-        )
+    """Soft filled ellipse under the cube (Saturn-ring / mockup pedestal)."""
+    w, h = canvas.size
+    layer = Image.new("L", (w, h), 0)
+    draw = ImageDraw.Draw(layer)
+    cx = front_bottom[0]
+    cy = front_bottom[1] + edge * 0.22
+    rx, ry = edge * 0.78, edge * 0.20
+    draw.ellipse((cx - rx, cy - ry, cx + rx, cy + ry), fill=255)
+    # Inner contact umbra.
     draw.ellipse(
-        (cx - rx * 0.22, cy - ry * 0.22, cx + rx * 0.22, cy + ry * 0.22),
-        fill=(0, 0, 0, 40),
+        (cx - rx * 0.42, cy - ry * 0.38, cx + rx * 0.42, cy + ry * 0.38),
+        fill=255,
     )
-    canvas.alpha_composite(overlay)
+    layer = layer.filter(ImageFilter.GaussianBlur(radius=max(10, edge // 16)))
+    shadow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    alpha = layer.point(lambda p: int(p * 0.48))
+    shadow.putalpha(alpha)
+    canvas.alpha_composite(shadow)
 
 
 def _draw_wireframe(
@@ -112,13 +107,16 @@ def _draw_wireframe(
         (e, f),
         (f, g),
         (g, h),
-        (h, e),  # top
+        (h, e),
         (h, d),
         (d, c),
-        (c, g),  # front
+        (c, g),
         (f, b),
-        (b, c),  # right
+        (b, c),
     ]
+    # Dark understroke then bright edge so seams stay crisp on busy textures.
     for a, z in edges:
-        draw.line([a, z], fill=CUBE_EDGE, width=2)
+        draw.line([a, z], fill=(20, 20, 20, 160), width=5)
+    for a, z in edges:
+        draw.line([a, z], fill=CUBE_EDGE, width=3)
     canvas.alpha_composite(overlay)

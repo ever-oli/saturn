@@ -4,3 +4,7 @@ numpy==2.2.6
 requests==2.32.5
 python-dotenv==1.1.1
 spaces>=0.30.0
+# CPU background removal for emblem mode. App falls back if import or the
+# u2netp weights fail. Do not use rembg[gpu] / bria-rmbg on this Space.
+rembg==2.0.57
+onnxruntime==1.19.2

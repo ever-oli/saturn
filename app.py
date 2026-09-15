@@ -14,6 +14,7 @@ import gradio as gr
 from PIL import Image
 
 from config import DEFAULT_FACE_MODE, ENABLE_MULTIVIEW, ENABLE_PRINTIFY
+from geometry.bg import rembg_available
 from geometry.pipeline import generate
 from geometry.tees import ensure_example_band, ensure_example_starfield, ensure_tee_templates
 
@@ -123,14 +124,17 @@ def _noop_zerogpu() -> None:
 def _run(
     image: Image.Image | None,
     face_mode: str,
+    remove_bg: bool,
 ) -> tuple[Image.Image | None, Image.Image | None, Image.Image | None, Image.Image | None, Image.Image | None, str]:
     if image is None:
         raise gr.Error("Upload an image — Saturn maps it onto a cube and unfolds the net.")
 
-    result = generate(image, face_mode=face_mode)
+    result = generate(image, face_mode=face_mode, remove_bg=bool(remove_bg))
     engine = "multi-view diffusion (stub hit — unexpected)" if result.used_multiview else "PIL geometry"
+    rembg_note = "on" if result.removed_bg else "off"
     status = (
-        f"**Path:** {engine} · **Face mode:** `{face_mode}`\n\n"
+        f"**Path:** {engine} · **Face mode:** `{face_mode}` → `{result.face_mode}` · "
+        f"**rembg:** {rembg_note}\n\n"
         "Front is an isometric cube on the chest. Back is the 6-face Latin-cross net "
         "(column of 4; wings on the second square from the top)."
     )
@@ -145,7 +149,8 @@ with gr.Blocks(title="Saturn", theme=THEME, css=CUSTOM_CSS, head=HEAD) as demo:
 Black Cube of Saturn · *streetwear customizer*
 
 Upload any image. v1 builds a chest cube and unfolds it into a Latin-cross net,
-then composites both onto blank oversized tees. v1 is PIL on ZeroGPU hosting (no GPU quota burned).
+then composites both onto blank oversized tees. Faces are opaque materials or
+emblems (never unresolved alpha). v1 is PIL on ZeroGPU hosting (no GPU quota burned).
             """
         )
 
@@ -154,29 +159,54 @@ then composites both onto blank oversized tees. v1 is PIL on ZeroGPU hosting (no
             image_in = gr.Image(
                 label="Source texture",
                 type="pil",
-                image_mode="RGB",
+                image_mode="RGBA",
                 sources=["upload", "clipboard"],
                 height=360,
             )
+            _modes = ("auto", "single", "wrap", "emblem", "grid")
             face_mode = gr.Radio(
-                choices=["single", "wrap", "grid", "auto"],
-                value=DEFAULT_FACE_MODE if DEFAULT_FACE_MODE in {"single", "wrap", "grid", "auto"} else "single",
+                choices=[
+                    ("Auto", "auto"),
+                    ("Single material", "single"),
+                    ("Wrap band", "wrap"),
+                    ("Emblem on black", "emblem"),
+                    ("Grid 2×3", "grid"),
+                ],
+                value=DEFAULT_FACE_MODE if DEFAULT_FACE_MODE in _modes else "auto",
                 label="Face mapping",
-                info="single = one crop on all faces · wrap = horizontal band around the equator · grid = 2×3 crops",
+                info=(
+                    "auto = cutout→emblem, wide/gold band→wrap, else material · "
+                    "single = albedo + per-face light · wrap = kiswah/equator · "
+                    "emblem = subject on black · grid = 2×3 crops"
+                ),
+            )
+            _rembg = rembg_available()
+            remove_bg = gr.Checkbox(
+                label="Remove background (rembg)",
+                value=_rembg,
+                info=(
+                    "Cuts the subject out (u2netp, CPU) when Auto picks emblem or you "
+                    "choose Emblem. Textures skip rembg. Falls back to flatten if rembg is unavailable."
+                    if _rembg
+                    else "rembg is not installed in this runtime — alpha is flattened onto #0a0a0a instead."
+                ),
+                interactive=_rembg,
             )
             generate_btn = gr.Button("Generate mockup", variant="primary")
             status = gr.Markdown("Upload a texture, then generate.", elem_classes=["stub-note"])
         with gr.Column(scale=6):
-            combined_out = gr.Image(label="Front + back mockup", type="pil", height=520)
+            combined_out = gr.Image(
+                label="Front + back mockup", type="pil", image_mode="RGB", height=520
+            )
 
     with gr.Row():
-        front_out = gr.Image(label="Front tee", type="pil")
-        back_out = gr.Image(label="Back tee", type="pil")
+        front_out = gr.Image(label="Front tee", type="pil", image_mode="RGB")
+        back_out = gr.Image(label="Back tee", type="pil", image_mode="RGB")
 
     with gr.Accordion("Geometry intermediates", open=False):
         with gr.Row():
-            cube_out = gr.Image(label="Isometric cube", type="pil")
-            net_out = gr.Image(label="Latin-cross net", type="pil")
+            cube_out = gr.Image(label="Isometric cube", type="pil", image_mode="RGB")
+            net_out = gr.Image(label="Latin-cross net", type="pil", image_mode="RGB")
 
     with gr.Accordion("Multi-view diffusion (coming soon)", open=False):
         gr.Markdown(
@@ -217,19 +247,19 @@ not call Printify.** Wire it here in v2 after print-area mapping exists.
 
     examples = []
     if Path(EXAMPLE_STARFIELD).exists():
-        examples.append([str(EXAMPLE_STARFIELD), "single"])
+        examples.append([str(EXAMPLE_STARFIELD), "auto", False])
     if Path(EXAMPLE_BAND).exists():
-        examples.append([str(EXAMPLE_BAND), "wrap"])
+        examples.append([str(EXAMPLE_BAND), "wrap", False])
     if examples:
         gr.Examples(
             examples=examples,
-            inputs=[image_in, face_mode],
+            inputs=[image_in, face_mode, remove_bg],
             label="Example textures",
         )
 
     generate_btn.click(
         fn=_run,
-        inputs=[image_in, face_mode],
+        inputs=[image_in, face_mode, remove_bg],
         outputs=[combined_out, front_out, back_out, cube_out, net_out, status],
         api_name="generate",
     )

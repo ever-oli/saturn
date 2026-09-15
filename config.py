@@ -39,7 +39,7 @@ def _path(name: str, default: Path) -> Path:
 
 PANEL_SIZE: int = _int("SATURN_PANEL_SIZE", 512)
 NET_GAP: int = _int("SATURN_NET_GAP", 3)
-DEFAULT_FACE_MODE: str = os.getenv("SATURN_FACE_MODE", "single").strip().lower()
+DEFAULT_FACE_MODE: str = os.getenv("SATURN_FACE_MODE", "auto").strip().lower()
 
 TEE_FRONT_PATH: Path = _path("SATURN_TEE_FRONT", ASSETS_DIR / "tee_front.png")
 TEE_BACK_PATH: Path = _path("SATURN_TEE_BACK", ASSETS_DIR / "tee_back.png")
@@ -53,5 +53,8 @@ PRINTIFY_API_BASE: str = os.getenv("PRINTIFY_API_BASE", "https://api.printify.co
 
 MOCKUP_BACKGROUND: tuple[int, int, int] = (214, 214, 214)
 TEE_FABRIC: tuple[int, int, int] = (244, 244, 241)
-CUBE_EDGE: tuple[int, int, int, int] = (236, 236, 236, 230)
+# Opaque fill for cutouts / emblem grounds / unresolved alpha (Black Cube motif).
+FACE_BACKGROUND: tuple[int, int, int] = (10, 10, 10)
+CUBE_EDGE: tuple[int, int, int, int] = (248, 248, 248, 255)
 NET_BORDER: tuple[int, int, int, int] = (255, 255, 255, 255)
+NET_SEPARATOR: tuple[int, int, int, int] = (236, 236, 236, 255)
