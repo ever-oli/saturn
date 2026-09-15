@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import spaces  # ZeroGPU requires ≥1 @spaces.GPU fn; PIL work stays outside it
 import gradio as gr
 from PIL import Image
 
@@ -112,6 +113,13 @@ THEME = gr.themes.Base(
 )
 
 
+
+@spaces.GPU(duration=1)
+def _noop_zerogpu() -> None:
+    """ZeroGPU startup scan requires ≥1 decorated function; never called."""
+    return None
+
+
 def _run(
     image: Image.Image | None,
     face_mode: str,
@@ -137,7 +145,7 @@ with gr.Blocks(title="Saturn") as demo:
 Black Cube of Saturn · *streetwear customizer*
 
 Upload any image. v1 builds a chest cube and unfolds it into a Latin-cross net,
-then composites both onto blank oversized tees. CPU only — no GPU, no paid APIs.
+then composites both onto blank oversized tees. v1 is PIL on ZeroGPU hosting (no GPU quota burned).
             """
         )
 

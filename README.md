@@ -7,6 +7,7 @@ sdk: gradio
 sdk_version: 6.27.0
 app_file: app.py
 python_version: "3.12"
+suggested_hardware: zero-a10g
 short_description: Cube-to-cross streetwear t-shirt mockups
 ---
 
@@ -14,7 +15,7 @@ short_description: Cube-to-cross streetwear t-shirt mockups
 
 Open-source streetwear customizer for the **Black Cube of Saturn** motif. Upload any image; Saturn maps it onto a cube and unfolds that cube into a 6-panel **Latin-cross net** (vertical column of 4 squares, left/right wings on the second square from the top), then composites both onto oversized tee mockups.
 
-v1 is **CPU Basic** — Pillow geometry and compositing, no GPU, no paid APIs.
+v1 is **Pillow geometry** hosted on a **ZeroGPU** Space slot (free-account path). Generation stays on CPU — a no-op `@spaces.GPU` satisfies ZeroGPU startup without burning quota.
 
 ## v1 generate path
 
