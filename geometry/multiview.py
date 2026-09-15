@@ -1,4 +1,8 @@
-"""Zero123++ multi-view backend → six Saturn cube faces.
+"""Legacy Zero123++ multi-view backend (not loaded by the Gradio UI).
+
+The product path is FLUX.2-klein-9B in ``app.py``. This module remains for
+geometry smoke tests and optional ``SATURN_ENABLE_MULTIVIEW`` callers. Weights
+are CC-BY-NC 4.0 — not for a commercial Printify pipeline.
 
 Official load (SUDO-AI-3D/zero123plus README, v1.2 usage unchanged from v1.1)::
 
@@ -29,8 +33,8 @@ Zero123++ does **not** emit orthographic cube unwraps. These six perspective
 views are assigned 1:1 into Saturn face slots so the Latin-cross net and
 isometric cube stay view-consistent.
 
-This module is import-safe without torch. ``load_pipeline()`` must run at
-app.py module scope *after* ``import spaces`` so ZeroGPU can pack weights.
+This module is import-safe without torch. ``load_pipeline()`` must run after
+``import spaces`` if you ever load weights on ZeroGPU.
 """
 
 from __future__ import annotations

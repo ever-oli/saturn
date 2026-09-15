@@ -8,64 +8,102 @@ sdk_version: 6.27.0
 app_file: app.py
 python_version: "3.12"
 suggested_hardware: zero-a10g
-short_description: Cube-to-cross streetwear t-shirt mockups
+startup_duration_timeout: 1h
+short_description: Klein-9B cube + Latin-cross tee mockups
 ---
 
 # Saturn
 
-Open-source streetwear customizer for the **Black Cube of Saturn** motif. Upload any image; Saturn maps it onto a cube and unfolds that cube into a 6-panel **Latin-cross net** (vertical column of 4 squares, left/right wings on the second square from the top), then composites both onto oversized tee mockups.
+Open-source streetwear customizer for the **Black Cube of Saturn** motif.
+The primary engine is **[FLUX.2-klein-9B](https://huggingface.co/black-forest-labs/FLUX.2-klein-9B)**
+on a **ZeroGPU** Space. Klein unifies **text-to-image** and **multi-reference
+image editing** in one architecture — upload a texture/ref, get a designed
+front+back tee mockup (not a Zero123++ sticker grid).
 
-**PIL geometry** is the default (CPU, no ZeroGPU quota). **Zero123++** (`sudo-ai/zero123plus-v1.2`) is the first real multi-view backend: it runs only when you pick *Multi-view / Zero123++* and the weights are loaded. Optional `rembg` (u2netp, CPU) cuts the subject out for emblem mode and as Zero123++ preprocess.
+- **Front:** isometric / 3D cube graphic on a white oversized tee chest
+- **Back:** unfolded 6-panel **Latin-cross** cube net (column of 4, wings on the second square from the top)
+- High-contrast minimalist esoteric streetwear — side-by-side front+back **or** separate 1024² images
 
-## Generate path
+## License (read this)
 
-1. **Faces**
-   - PIL: `auto` / `single` / `wrap` / `emblem` / `grid` in `geometry/faces.py` (opaque, no Gradio checker).
-   - Zero123++: `geometry/multiview.py` runs `Zero123PlusPipeline` and maps the 6-view grid into cube slots. On failure or when disabled, PIL is used.
-2. Latin-cross net with opaque panels (`geometry/net.py`).
-3. Isometric cube with white edges and a soft pedestal shadow (`geometry/cube.py`).
-4. Chest cube + back net on blank tees (`geometry/mockup.py`). Returned images are RGB.
-5. Side-by-side mockup plus front/back crops.
+**FLUX.2-klein-9B is [FLUX Non-Commercial](https://huggingface.co/black-forest-labs/FLUX.2-klein-9B).**
+This Space is for **demo and research**. **Do not use 9B outputs for paid Printify merch or other commercial product pipelines.**
 
-Printify is an importable stub only (`printify/client.py`); the UI does not call it.
+A later commercial swap (not implemented here) is
+[`black-forest-labs/FLUX.2-klein-4B`](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) (**Apache-2.0**).
+Saturn itself remains MIT.
 
-## Zero123++ (ZeroGPU)
+PIL geometry (the old compositor / sticker path) is under **Experimental**, off by default.
+**Zero123++ is not a user-facing engine.** Printify remains an importable stub only and is not called.
 
-Load (official API, v1.2 usage is the same as v1.1):
+## Generate path (Klein 9B)
+
+1. Optional texture / reference photo + short notes.
+2. If an image is present:
+   - It is passed to `Flux2KleinPipeline` as **`image=[upload]`** — official reference *conditioning* (not img2img, **no `strength`**).
+   - BLIP (`Salesforce/blip-image-captioning-base`) may also name materials/colors for the prompt. The photo is **not** stamped onto six cube faces.
+3. `flux/prompts.py` builds a product prompt: cube-front + Latin-cross-back, white oversized tee.
+4. `Flux2KleinPipeline` on ZeroGPU: `guidance_scale=1.0`, `num_inference_steps=4`, **1024×1024** (Hub example).
+5. Optional extra calls: isolated print-ready cube graphic + net graphic (same reference).
 
 ```python
-DiffusionPipeline.from_pretrained(
-    "sudo-ai/zero123plus-v1.2",
-    custom_pipeline="sudo-ai/zero123plus-pipeline",
-    torch_dtype=torch.float16,  # bfloat16 on ZeroGPU
+from diffusers import Flux2KleinPipeline
+import torch
+
+pipe = Flux2KleinPipeline.from_pretrained(
+    "black-forest-labs/FLUX.2-klein-9B",
+    torch_dtype=torch.bfloat16,
 )
+pipe.to("cuda")  # ZeroGPU: module scope, string "cuda" only
+
+image = pipe(
+    prompt=prompt,
+    height=1024,
+    width=1024,
+    guidance_scale=1.0,
+    num_inference_steps=4,
+    generator=torch.Generator(device="cuda").manual_seed(0),
+    # only when the user uploaded a ref:
+    image=[reference_pil],
+).images[0]
 ```
 
-Then `EulerAncestralDiscreteScheduler` with `timestep_spacing="trailing"`, `.to("cuda")` (never `cuda:0`). Default **36** steps, CFG **4.0**, `@spaces.GPU(duration=90)`. Official notes ~28 steps for general objects and 75–100 for delicate detail.
+`printify/client.py` is not called from Generate.
 
-`SATURN_ENABLE_MULTIVIEW` defaults **off** on CPU and **on** when `SPACES_ZERO_GPU` is set. Explicit `true`/`false` always wins. Weights load at `app.py` module scope after `import spaces`. The Gradio-bound PIL path is **not** GPU-decorated; `/generate_multiview` is.
+## Diffusers install
 
-### Grid → cube faces
+`Flux2KleinPipeline` is **not** in older PyPI wheels (e.g. `diffusers==0.36.0` only has `Flux2Pipeline`).
+The [model card](https://huggingface.co/black-forest-labs/FLUX.2-klein-9B) and the official
+[BFL Space](https://huggingface.co/spaces/black-forest-labs/FLUX.2-klein-9B) install **from git**:
 
-The pipeline returns one **640×960** image: **2×3** tiles of 320×320, row-major (same split as `SUDO-AI-3D/zero123plus/gradio_app.py`). v1.2 cameras and Saturn slots:
+```
+git+https://github.com/huggingface/diffusers.git
+```
 
-| Tile | Azimuth (rel. input) | Elevation | Face |
-| --- | --- | --- | --- |
-| 0 (r0 c0) | 30° | +20° | FRONT |
-| 1 (r0 c1) | 90° | −10° | RIGHT |
-| 2 (r1 c0) | 150° | +20° | TOP |
-| 3 (r1 c1) | 210° | −10° | BACK |
-| 4 (r2 c0) | 270° | +20° | LEFT |
-| 5 (r2 c1) | 330° | −10° | BOTTOM |
+That line is in this repo's `requirements.txt`. If a later PyPI release ships Klein, you can pin it instead.
 
-These are perspective object views, not an orthographic cube unwrap. TOP/BOTTOM are the leftover +20°/−10° tiles (Zero123++ has no true +Z/−Z). Input is rembg’d when the checkbox is on, then squared onto gray `(127,127,127)` like the official demo.
+## ZeroGPU / Spaces
 
-### License / access
+Hardware card: **~29GB VRAM** for 9B bf16. ZeroGPU **large** is ~48GB, so full 9B should fit.
+Load at **module scope** with `.to("cuda")`. Do not `enable_model_cpu_offload` on ZeroGPU.
 
-- **Code** (custom pipeline): Apache 2.0.
-- **Weights** (`sudo-ai/zero123plus-v1.2`): **CC-BY-NC 4.0** — not for a commercial product pipeline; outputs may still be used freely. You are accountable for generated images.
-- Checkpoint is **not gated** (no HF token required to download).
-- PIL path does not load or depend on this model.
+If 9B still OOMs, set Space variable `SATURN_FLUX_MODEL=black-forest-labs/FLUX.2-klein-9b-fp8` (fp8 variant). Default stays the full 9B.
+
+`import spaces` is the first CUDA-touching import. The Gradio **Generate mockup** handler is `@spaces.GPU` with duration **85s** for one call (matches the official Klein Space) and **90s** when separate tees / print assets stack extra calls.
+
+Do **not** pin `torch`, `gradio`, or `spaces` in `requirements.txt`. Set Space variable `GRADIO_SSR_MODE=false`. `app.py` does not bind a port when `SPACE_ID` is set.
+
+### Gated model + `HF_TOKEN`
+
+The 9B repo is **gated (auto)**. For the Space to download weights:
+
+1. Visit [black-forest-labs/FLUX.2-klein-9B](https://huggingface.co/black-forest-labs/FLUX.2-klein-9B) while logged in as the Space owner and **Accept** the FLUX Non-Commercial license.
+2. Create a Hub token that can read that repo.
+3. Add Space secret **`HF_TOKEN`** (or `HUGGING_FACE_HUB_TOKEN`).
+
+Without this, the UI boots but Generate explains that Klein did not load.
+
+Live Space: [eyov/saturn](https://huggingface.co/spaces/eyov/saturn) (`zero-a10g`).
 
 ## Local run
 
@@ -74,53 +112,49 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 pip install gradio==6.27.0 spaces   # provided by Spaces; needed locally
-cp .env.example .env   # optional
+cp .env.example .env
+# Optional: skip 9B + BLIP downloads while hacking UI / prompts
+export SATURN_SKIP_MODEL_LOAD=1
 python app.py
 ```
 
-Then open [http://127.0.0.1:7865](http://127.0.0.1:7865). First launch writes blank tee placeholders and example textures under `assets/` if they are missing.
+Open [http://127.0.0.1:7865](http://127.0.0.1:7865). Full Klein locally needs a GPU, Hub login (accepted license), and ~29GB VRAM at bf16.
 
-Headless smoke (PIL + Zero123++ **grid mapping**, no GPU/weights):
+Headless smokes (no Flux VRAM):
 
 ```bash
+python -m unittest discover -s tests -v
 python -m geometry.smoke
-# or
-python -c "from geometry.pipeline import write_demo; print(write_demo())"
 ```
 
-Live Zero123++ inference is not part of smoke (needs a GPU and ~5GB VRAM). On a Space, pick *Multi-view / Zero123++* after the model has loaded.
+## Space test steps (after this lands on `eyov/saturn`)
 
-## Push to a Hugging Face Space
+1. Confirm Gradio + ZeroGPU (`hf spaces info eyov/saturn --expand runtime`).
+2. Confirm secret `HF_TOKEN` is set and the owner **accepted the 9B license**.
+3. Confirm env `GRADIO_SSR_MODE=false`.
+4. Open the app: **Zero123++ / PIL face-mode must not be the default path**. Primary control is **Generate mockup**. Hero must show **FLUX Non-Commercial**.
+5. Empty upload + example notes → catalog pair at 1024², not a checkerboard cube.
+6. Upload a reference (fabric / Kaaba-like). Prompt accordion should mention **`image=[upload]`**. Cube should follow materials/colors, not a 6-up sticker sheet.
+7. Optional: print-ready graphics (two extra GPU calls).
+8. `hf spaces logs eyov/saturn --tail 200` — Klein load at startup, no CPU fallback, generate inside `@spaces.GPU`. If OOM, switch to the fp8 repo via `SATURN_FLUX_MODEL`.
+9. Experimental accordion still runs PIL; Printify button stays disabled.
 
-Create a **Gradio + ZeroGPU** Space (`zero-a10g`). `SATURN_ENABLE_MULTIVIEW` defaults on under ZeroGPU. To force it:
-
-```
-hf spaces secrets set <you>/saturn SATURN_ENABLE_MULTIVIEW=true
-```
-
-Do not pin `torch` / `gradio` / `spaces` in `requirements.txt` (ZeroGPU-managed). Optional Printify secrets stay unused.
-
-## Face mapping (PIL)
-
-| Mode | Behavior |
-| --- | --- |
-| `auto` (default) | Transparency or cutout → `emblem`. Aspect ≥ 1.4 **or** a horizontal gold/chroma band (kiswah) → `wrap`. Else `single` material. |
-| `single` | Center-square crop as albedo on all six faces, with distinct per-face lighting. |
-| `wrap` | Horizontal equator around LEFT → FRONT → RIGHT → BACK; top/bottom are fabric crops. |
-| `emblem` | Subject scaled on solid `#0a0a0a`. Optional rembg. |
-| `grid` | 2×3 crop grid, one cell per face. |
+Measure wall time of a 4-step 1024² call (with and without a ref) and tighten duration if 85s is generous.
 
 ## Layout
 
 | Path | Role |
 | --- | --- |
-| `app.py` | Gradio Blocks UI; `@spaces.GPU` on Zero123++ only |
-| `config.py` | Env-based settings and feature flags |
-| `geometry/multiview.py` | Zero123++ load, grid split, face map |
-| `geometry/` | Faces, net, isometric cube, tee templates, compositing |
+| `app.py` | Gradio UI; `@spaces.GPU` on Klein generate |
+| `flux/prompts.py` | Cube-front + Latin-cross-back prompt builder |
+| `flux/caption.py` | Optional BLIP caption (CPU); Klein `image=` is the real ref path |
+| `flux/engine.py` | `Flux2KleinPipeline` load + infer |
+| `geometry/` | Experimental PIL cube/net/tee (legacy) |
+| `geometry/multiview.py` | Dead Zero123++ backend (not loaded by UI) |
 | `printify/` | `create_product` stub |
 | `assets/` | Blank tees, example textures, demo outputs |
 
 ## License
 
-Saturn is MIT. Zero123++ weights remain CC-BY-NC 4.0 when that engine is used.
+Saturn is MIT. **FLUX.2-klein-9B weights are FLUX Non-Commercial.** BLIP is BSD.
+Legacy Zero123++ weights remain CC-BY-NC 4.0 if that code is ever invoked outside the UI.

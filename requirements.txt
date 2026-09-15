@@ -1,18 +1,21 @@
-# Hugging Face Spaces preinstalls gradio (see README sdk_version), spaces, and
-# torch. Do not pin those here — ZeroGPU rejects unsupported torch pins and
-# platform-manages spaces/gradio. Local: pip install gradio==6.27.0 spaces
+# Hugging Face Spaces preinstalls gradio (README sdk_version), spaces,
+# huggingface_hub, and torch. Do not pin those — ZeroGPU rejects unsupported
+# torch versions and platform-manages spaces/gradio. Local extras:
+#   pip install gradio==6.27.0 spaces
 pillow==11.3.0
 numpy==2.2.6
 requests==2.32.5
 python-dotenv==1.1.1
-# CPU background removal for emblem + Zero123++ preprocess. App falls back
-# if import or the u2netp weights fail. Do not use rembg[gpu] / bria-rmbg.
+# Experimental PIL path still uses rembg. Do not use rembg[gpu].
 rembg==2.0.57
 onnxruntime==1.19.2
-# Zero123++ (sudo-ai/zero123plus-v1.2 via custom_pipeline). Leave torch
-# unpinned (ZeroGPU allows only 2.8.0 / 2.9.1 / 2.10.0 / 2.11.0).
-diffusers>=0.30.0
-transformers>=4.40.0
+# FLUX.2-klein-9B needs Flux2KleinPipeline. Older PyPI (e.g. 0.36) only has
+# Flux2Pipeline — install diffusers from git until a release includes Klein.
+# Leave torch unpinned (ZeroGPU: 2.8.0 / 2.9.1 / 2.10.0 / 2.11.0).
+git+https://github.com/huggingface/diffusers.git
 accelerate
+transformers>=4.51.0
 safetensors
+sentencepiece
+protobuf
 torchvision
