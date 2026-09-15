@@ -137,7 +137,7 @@ def _run(
     return result.combined, result.front, result.back, result.cube, result.net, status
 
 
-with gr.Blocks(title="Saturn") as demo:
+with gr.Blocks(title="Saturn", theme=THEME, css=CUSTOM_CSS, head=HEAD) as demo:
     with gr.Column(elem_id="saturn-hero"):
         gr.Markdown(
             """
@@ -236,12 +236,12 @@ not call Printify.** Wire it here in v2 after print-area mapping exists.
 
 
 if __name__ == "__main__":
+    # On Spaces, let the platform bind the port; local default stays 7865.
     demo.queue()
-    demo.launch(
-        server_name="0.0.0.0",
-        server_port=int(os.environ.get("GRADIO_SERVER_PORT", "7865")),
-        show_error=True,
-        theme=THEME,
-        css=CUSTOM_CSS,
-        head=HEAD,
-    )
+    kwargs = {"show_error": True}
+    if not os.getenv("SPACE_ID"):
+        kwargs.update(
+            server_name="0.0.0.0",
+            server_port=int(os.environ.get("GRADIO_SERVER_PORT", "7865")),
+        )
+    demo.launch(**kwargs)
